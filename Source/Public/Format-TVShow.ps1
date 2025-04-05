@@ -186,6 +186,9 @@ Function Format-TVShow {
         # Remove Colon from the Name; Not a Supported Windows Filename Character.
         $FormattedTVShowName = $FormattedTVShowName -replace "[$InvalidFileNameChars]", ''
 
+        # Replace any Multiple Spaces with a Single Space
+        $FormattedTVShowName = $FormattedTVShowName -Replace ('\s+', ' ')
+
         # Grab Only the Year from the First Aired Date
         $FirstAiredYear = $TVShowInfo.first_air_date.Split('-')[0]
 
@@ -271,77 +274,24 @@ Function Format-TVShow {
                 Write-Debug "Filtered Episode Title: $EpisodeTitle"
 
                 # Finds the Correct Episode File by Matching Season & Episode Number
-                # Against the Currently Processed Episode and Renames the File
-                Get-ChildItem -Path $UpdatedFolderPath -File -Recurse
+                $videoFiles = Get-ChildItem -Path $UpdatedFolderPath -File -Recurse
                 | Where-Object {
                     # Filter results to only contain following video files formats.
                     $_.Extension -in @(
-                        '.mkv', '.avi', '.mov', '.wmv', '.mp4', '.m4v', '.mpg', '.mpeg', '.flv'
-                    ) -and
-                    (
-                        # Find file that contains both correct season & episode name
-                        (
-                            (
-                                # Match Season Number
-                                $_.Name -match $(
-                                    ($FullEpisodeNumber -match '[sS]\d{2}')
-                                    | Select-Object -First 1
-                                    # Returns Section of the String that the Regex Validated
-                                    | ForEach-Object { $Matches.Values }
-                                )
-                            ) -and
-                            (
-                                # Match Episode Number
-                                $_.Name -match $(
-                                    ($FullEpisodeNumber -match '[eE]\d{2}')
-                                    | Select-Object -First 1
-                                    # Returns Section of the String that the Regex Validated
-                                    | ForEach-Object { $Matches.Values }
-                                )
-                            )
-                        ) -or
-                        # If Season is not part of episode number try pulling it from parent folder.
-                        (
-                            (
-                                # Match season folder
-                                (
-                                    # Convert season folder number to 2 digits and add 'S' before the number.
-                                    "S{0:D2}" -f [int](
-                                        # Remove everything from Season folder Name except numbers and spaces
-                                        # Then grab the first group of numbers before a space
-                                        (
-                                        (Split-Path $_.Directory -Leaf) -replace '[^0-9$ ]', ''
-                                        ).TrimStart().Split(' ')[0]
-                                    )
-                                ) -eq $FullEpisodeNumber.Split('.')[0]
-                            ) -and
-                            (
-                                # Match episode number
-                                (
-                                    # Convert episode number to two digits and add 'E' before the number.
-                                    "E{0:D2}" -f [int](
-                                        # Remove everything from episode folder Name except numbers and spaces
-                                        # Then grab the first group of numbers before a space
-                                        (
-                                            $_.Name -replace '[^0-9$ ]', ''
-                                        ).TrimStart().Split(' ')[0]
-                                    )
-                                ) -eq $FullEpisodeNumber.Split('.')[-1]
-                            ) -and
-                            (
-                                # Make sure Season number can't be pulled from episode Name
-                                -not(
-                                    $_.Name -match $(
-                                        ($FullEpisodeNumber -match '[sS]\d{2}')
-                                        | Select-Object -First 1
-                                        # Returns Section of the String that the Regex Validated
-                                        | ForEach-Object { $Matches.Values }
-                                    )
-                                )
-                            )
-                        )
+                        '.mkv',
+                        '.avi',
+                        '.mov',
+                        '.wmv',
+                        '.mp4',
+                        '.m4v',
+                        '.mpg',
+                        '.mpeg',
+                        '.flv'
                     )
                 }
+                
+                # Finds the Correct Episode File by Matching Season & Episode Number
+                Find-FileByEpisodeNumber -fileList $videoFiles -FullEpisodeNumber $FullEpisodeNumber
                 # Rename the File Found to Correct Name Format
                 | ForEach-Object {
                     Write-Verbose "Episode file found: `"$($_.FullName)`""
@@ -368,32 +318,25 @@ Function Format-TVShow {
                 ) -ErrorAction continue
 
                 # Does the same lookup process as above, this time looking for subtitle files.
-                Get-ChildItem -Path $UpdatedFolderPath -Recurse
+                $subtitleList = Get-ChildItem -Path $UpdatedFolderPath -Recurse
                 # Filter Results to Ether Directories or Files with Subtitle Files Extensions
                 | Where-Object {
                     $_.PSIsContainer -eq $true -or
-                    $_.Extension -in @('.srt', '.smi', '.ssa', '.ass', '.vtt', '.vobsub', '.pgs') }
-                # Process Files First so it Doesn't Have Problems with the Folder Subtitle Files Rename Process
-                | Sort-Object PSIsContainer
-                # Grab Result that Matches the Season and Episode Number being Processed
-                | Where-Object {
-                    (
-                        $_.Name -match $(
-                                ($FullEpisodeNumber -match '[sS]\d{2}')
-                            | Select-Object -First 1
-                            # Returns Section of the String that the Regex Validated
-                            | ForEach-Object { $Matches.Values }
-                        )
-                    ) -and
-                    (
-                        $_.Name -match $(
-                                ($FullEpisodeNumber -match '[eE]\d{2}')
-                            | Select-Object -First 1
-                            # Returns Section of the String that the Regex Validated
-                            | ForEach-Object { $Matches.Values }
-                        )
+                    $_.Extension -in @(
+                        '.srt',
+                        '.smi',
+                        '.ssa',
+                        '.ass',
+                        '.vtt',
+                        '.vobsub',
+                        '.pgs'
                     )
                 }
+                # Process Files First so it Doesn't Have Problems with the Folder Subtitle Files Rename Process
+                | Sort-Object PSIsContainer
+                
+                # Grab Result that Matches the Season and Episode Number being Processed
+                Find-FileByEpisodeNumber -fileList $subtitleList -FullEpisodeNumber $FullEpisodeNumber
                 | ForEach-Object {
                     # Check if Currently ProcessedS Object is a Directory or File
                     if ($_.PSIsContainer) {
